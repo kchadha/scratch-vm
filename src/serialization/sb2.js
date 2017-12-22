@@ -170,23 +170,15 @@ const generateVariableIdGetter = (function () {
 
 const globalBroadcastMsgStateGenerator = (function () {
     let broadcastMsgNameMap = {};
-    const allBroadcastFields = [];
-    const emptyStringName = uid();
     return function (topLevel) {
         if (topLevel) broadcastMsgNameMap = {};
         return {
-            broadcastMsgMapUpdater: function (name, field) {
+            broadcastMsgMapUpdater: function (name) {
                 name = name.toLowerCase();
-                if (name === '') {
-                    name = emptyStringName;
-                }
                 broadcastMsgNameMap[name] = `broadcastMsgId-${name}`;
-                allBroadcastFields.push(field);
                 return broadcastMsgNameMap[name];
             },
-            globalBroadcastMsgs: broadcastMsgNameMap,
-            allBroadcastFields: allBroadcastFields,
-            emptyMsgName: emptyStringName
+            globalBroadcastMsgs: broadcastMsgNameMap
         };
     };
 }());
@@ -345,32 +337,10 @@ const parseScratchObject = function (object, runtime, extensions, topLevel) {
         Promise.all(
             childrenPromises
         ).then(children => {
-            // Need create broadcast msgs as variables after
+            // Need to create broadcast msgs as variables after
             // all other targets have finished processing.
             if (target.isStage) {
                 const allBroadcastMsgs = globalBroadcastMsgObj.globalBroadcastMsgs;
-                const allBroadcastMsgFields = globalBroadcastMsgObj.allBroadcastFields;
-                const oldEmptyMsgName = globalBroadcastMsgObj.emptyMsgName;
-                if (allBroadcastMsgs[oldEmptyMsgName]) {
-                    // Find a fresh 'messageN'
-                    let currIndex = 1;
-                    while (allBroadcastMsgs[`message${currIndex}`]) {
-                        currIndex += 1;
-                    }
-                    const newEmptyMsgName = `message${currIndex}`;
-                    // Add the new empty message name to the broadcast message
-                    // name map, and assign it the old id.
-                    // Then, delete the old entry in map.
-                    allBroadcastMsgs[newEmptyMsgName] = allBroadcastMsgs[oldEmptyMsgName];
-                    delete allBroadcastMsgs[oldEmptyMsgName];
-                    // Now update all the broadcast message fields with
-                    // the new empty message name.
-                    for (let i = 0; i < allBroadcastMsgFields.length; i++) {
-                        if (allBroadcastMsgFields[i].value === '') {
-                            allBroadcastMsgFields[i].value = newEmptyMsgName;
-                        }
-                    }
-                }
                 // Traverse the broadcast message name map and create
                 // broadcast messages as variables on the stage (which is this
                 // target).
@@ -548,13 +518,7 @@ const parseBlock = function (sb2block, addBroadcastMsg, getVariableId, extension
                 if (!shadowObscured) {
                     // Need to update the broadcast message name map with
                     // the value of this field.
-                    // Also need to provide the fields[fieldName] object,
-                    // so that we can later update its value property, e.g.
-                    // if sb2 message name is empty string, we will later
-                    // replace this field's value with messageN
-                    // once we can traverse through all the existing message names
-                    // and come up with a fresh messageN.
-                    const broadcastId = addBroadcastMsg(fieldValue, fields[fieldName]);
+                    const broadcastId = addBroadcastMsg(fieldValue);
                     fields[fieldName].id = broadcastId;
                 }
                 fields[fieldName].variableType = expectedArg.variableType;
@@ -586,13 +550,7 @@ const parseBlock = function (sb2block, addBroadcastMsg, getVariableId, extension
                 activeBlock.fields[expectedArg.fieldName].id = getVariableId(providedArg);
             } else if (expectedArg.fieldName === 'BROADCAST_OPTION') {
                 // Add the name in this field to the broadcast msg name map.
-                // Also need to provide the fields[fieldName] object,
-                // so that we can later update its value property, e.g.
-                // if sb2 message name is empty string, we will later
-                // replace this field's value with messageN
-                // once we can traverse through all the existing message names
-                // and come up with a fresh messageN.
-                const broadcastId = addBroadcastMsg(providedArg, activeBlock.fields[expectedArg.fieldName]);
+                const broadcastId = addBroadcastMsg(providedArg);
                 activeBlock.fields[expectedArg.fieldName].id = broadcastId;
             }
             const varType = expectedArg.variableType;
