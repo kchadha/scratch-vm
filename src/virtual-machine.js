@@ -6,6 +6,7 @@ const centralDispatch = require('./dispatch/central-dispatch');
 const ExtensionManager = require('./extension-support/extension-manager');
 const log = require('./util/log');
 const Runtime = require('./engine/runtime');
+const SBParser = require('./serialization/sb_translation/sb');
 const sb2 = require('./serialization/sb2');
 const sb3 = require('./serialization/sb3');
 const StringUtil = require('./util/string-util');
@@ -207,6 +208,11 @@ class VirtualMachine extends EventEmitter {
                 // Intentionally rejecting here (want errors to be handled by caller)
                 if (error.hasOwnProperty('validationError')) {
                     return Promise.reject(JSON.stringify(error));
+                }
+                if (error === 'Parser only supports Scratch 2.X') {
+                    const sbParser = new SBParser(input);
+                    // TODO temporarily returning the object table
+                    return Promise.resolve(sbParser.objTable);
                 }
                 return Promise.reject(error);
             });
