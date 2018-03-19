@@ -6,9 +6,11 @@
  */
 
 const SmartBuffer = require('smart-buffer').SmartBuffer;
+// const Bitmap = require('imagejs').Bitmap;
 const log = require('../../util/log');
-// const defaultOneBitColorMap = require('./color_map').defaultOneBitColorMap;
-// const defaultColorMap = require('./color_map').defaultColorMap;
+const Variable = require('../../engine/variable');
+const defaultOneBitColorMap = require('./color_map').defaultOneBitColorMap;
+const defaultColorMap = require('./color_map').defaultColorMap;
 
 class Ref {
     constructor (i) {
@@ -39,16 +41,27 @@ class SBParser {
         this.targets = {};
         this.costumes = {};
         this.sounds = {};
-        this.objTable = this.parseSB();
+        this.parseSBHeader();
+        this.projectInfoObjectTable = this.parseObjectTable();
+        // console.log(`Done! Obj Table: ${JSON.stringify(objTable)}`);
+
+        this.contentObjectTable = this.parseObjectTable();
+
+        this.targets = this.parseProject();
+
     }
 
     static get OBJ_REF () {
         return 99;
     }
 
-    obj (classID, objData, optClassVersion, optFields) {
+    static get EPSILON () {
+        return 1 / 4294967296;
+    }
+
+    obj (classId, objData, optClassVersion, optFields) {
         return {
-            classID: classID,
+            classId: classId,
             className: objData && objData.className ? objData.className : '',
             objData: objData && objData.data ? objData.data : objData, // maybe {} if not provided...?
             classVersion: optClassVersion, // undefined if fixed format or number
@@ -56,7 +69,7 @@ class SBParser {
         };
     }
 
-    parseSB () {
+    parseSBHeader () {
         const data = this.data;
 
         // Validate project header
@@ -64,7 +77,6 @@ class SBParser {
             throw new Error('Invalid Scratch 1.4 project. Not enough bytes.');
         }
         const header = data.readString(10);
-        console.log('Header: ' + header);
         if (header !== 'ScratchV01' && header !== 'ScratchV02') {
             throw new Error('Input is not valid Scratch 1.4 project.');
         }
@@ -73,9 +85,9 @@ class SBParser {
         // so no need to save it to a variable)
         data.readInt32BE(); // TODO 2249
 
-        const objTable = this.parseObjectTable();
-        console.log(`Done! Obj Table: ${JSON.stringify(objTable)}`);
-
+        // Moving these up
+        // const objTable = this.parseObjectTable();
+        // console.log(`Done! Obj Table: ${JSON.stringify(objTable)}`);
     }
 
     parseObjectTable () {
@@ -95,6 +107,9 @@ class SBParser {
         for (let i = 0; i < objCount; i++) {
             objTable[i] = this.parseObj();
         }
+
+        this.fixReferences(objTable);
+
         return objTable;
     }
 
@@ -112,7 +127,7 @@ class SBParser {
             for (let i = 0; i < fieldCount; i++) {
                 fields[i] = this.parseField();
             }
-            result = this.obj(classId, null, classVersion, fields);
+            result = this.obj(classId, {}, classVersion, fields);
         }
         return result;
     }
@@ -129,7 +144,7 @@ class SBParser {
         return num;
     }
     parseFields (num) {
-        const arr = []
+        const arr = [];
         for (let i = 0; i < num; i++) {
             arr.push(this.parseField());
         }
@@ -193,7 +208,7 @@ class SBParser {
         case 8: // double/float
             return {
                 className: 'double/float',
-                data: data.readDoubleBE()
+                data: data.readDoubleBE() + SBParser.EPSILON // TODO maybe we need to check if this is an int first
             }; // TODO do we need to ensure that this is actually a float?
         case 9: // String
         case 10: { // Symbol
@@ -316,6 +331,10 @@ class SBParser {
     //     const raster = this.decodePixels(imagePixels, depth === 32);
     //
     //     // TODO bitmap data...
+    //     const bmpData = new Bitmap({
+    //         width: imageObj.width,
+    //         height: imageObj.height
+    //     });
     //
     //     if (depth <= 8) {
     //         const colorMap = depth === 1 ? defaultOneBitColorMap : defaultColorMap;
@@ -343,6 +362,191 @@ class SBParser {
     //     // TODO
     //     return null;
     // }
+    fixReferences (objTable) {
+        const thisParser = this;
+        const deRefIfRef = function (el, ot) {
+            if (el instanceof Ref) {
+                return thisParser.deRef(el, ot);
+            }
+            return el;
+        };
+
+        // Go through object references that store references to other objects
+        // in the table and dereference them
+
+        for (const i in objTable) {
+            const currObj = objTable[i];
+            const currClassId = currObj.classId;
+            if (currClassId >= 20 && currClassId <= 29) {
+                // These are collection elements
+                let collection = currObj.objData;
+                // Right now, these collections contain refs to other objects
+                // in the object table, dereference these.
+                collection = collection.map(el => deRefIfRef(el, objTable));
+                objTable[i].objData = collection; // TODO clean this up
+            }
+            if (currClassId > SBParser.OBJ_REF) {
+                // De-reference the fields of a 'user-defined' Scratch Object..
+                let currObjFields = currObj.fields;
+                currObjFields = currObjFields.map(el => deRefIfRef(el, objTable));
+                objTable[i].fields = currObjFields; // TODO clean this up
+            }
+
+        }
+    }
+
+    /**
+     * De-reference the given Ref object in the given object table.
+     * If the object table entry referenced by the current Ref object
+     * has null objData, return the entire entry object. Otherwise
+     * return the contents of the entry's objData field.
+     *
+     * @param {Ref} r The reference object to de-reference
+     * @param {Array} objTable The object table to look up the object referenced by r
+     * @return {object} The de-referenced object
+     */
+    deRef (r, objTable) {
+        const referencedEntry = objTable[r.index];
+        return (referencedEntry.objData === null) ? referencedEntry : referencedEntry.objData;
+    }
+
+    parseProject () {
+        const objTable = this.contentObjectTable;
+
+        // TODO record sprite names
+        this.recordSpriteNames();
+
+        const targets = new Array();
+        targets.push(this.parseStage(objTable[0])); // Stage should be first element in contentObjectTable
+
+        const sprites = objTable.filter(el => (el.classId === 124));
+
+        const spriteTargets = sprites.map(spr => this.parseSprite(spr));
+        // this.targets = targets;
+        return targets.concat(spriteTargets);
+        // stage.
+    }
+
+    parseStage (stageEntry) {
+        if (stageEntry.classId !== 125) {
+            throw new Error('First object in content object table should be stage.');
+        }
+
+        // const stage = Object.create(null);
+
+        const stage = this.parseTarget(stageEntry);
+
+        // stage.name = stageEntry.fields[6];
+        // In Scratch 1.4, users can feasibly change the stage name through the code
+        stage.isStage = true;
+
+        // if (stageEntry.fields.length > 16) // TODO record Sprite library order
+        if (stageEntry.fields.length > 18) stage.tempoBPM = stageEntry.fields[18].data;
+        if (stageEntry.fields.length > 20) {
+            // TODO fill out buildLists
+            stage.variables = stage.variables.concat(this.buildLists(stageEntry.fields[20]));
+        }
+
+        return stage;
+
+    }
+
+    // Parsing common to stage and sprite
+    parseTarget (targetEntry) {
+        const target = Object.create(null);
+        target.name = targetEntry.fields[6];
+        target.variables = this.buildVars(targetEntry.fields[7]);
+        target.scripts = this.buildScripts(targetEntry.fields[8]); // TODO define this
+        target.scriptComments = this.buildComments(targetEntry.fields[8]); // TODO define this
+        this.fixCommentRefs(target.scriptComments, target.scripts); // TODO define this
+        // TODO set media..... fields[10], fields[11] (costumes and sounds and current costume)
+        return target;
+    }
+
+    parseSprite (spriteEntry) {
+        const spriteFields = spriteEntry.fields;
+        const sprite = this.parseTarget(spriteEntry);
+
+        sprite.visible = (spriteFields[4].data && 1) === 0;
+        // sprite.scaleX = sprite.scaleY = spriteFields[13][0].data;
+        sprite.size = Math.round(spriteFields[13][0].data * 100);
+        sprite.rotationStyle = this.translateRotationStyle(spriteFields[15]); // TODO make this static
+        const dir = Math.round(spriteFields[14].data * 1000000) / 1000000;
+        sprite.direction = dir - 270; // TODO see complicated direction calculation in scratch 2 code
+
+        sprite.isDraggable = spriteFields.length > 18 ? spriteFields[18].data : false;
+        if (spriteFields.length > 20) {
+            sprite.variables = sprite.variables.concat(this.buildLists(spriteFields[20]));
+        }
+
+        // TODO sprite x y
+
+        return sprite;
+
+    }
+
+    recordSpriteNames () {
+        const objTable = this.contentObjectTable;
+
+        for (const i in objTable) {
+            const currObj = objTable[i];
+            const currClassId = currObj.classId;
+            if (currClassId === 124) {
+                // Start creating a new target...
+                if (currObj.objData) {
+                    // Sprite Name is @ index 6 of the obj fields array
+                    objTable[i].objData.name = currObj.fields[6];
+                }
+                // objTable[i].objData ? objTable[i].objData.name;
+            }
+        }
+    }
+
+    // TODO make this static
+    translateRotationStyle (sb1RotationStyle) {
+        switch (sb1RotationStyle) {
+        case 'normal':
+            return 'all around';
+        case 'leftRight':
+            return 'left-right';
+        case 'none':
+            return 'don\'t rotate';
+        default:
+            return 'all around';
+        }
+    }
+
+    // TODO this can be static
+    buildVars (pairs) {
+        if (pairs === null) return [];
+        const variables = [];
+        for (let i = 0; i < pairs.length - 1; i += 2) {
+            variables.push({
+                name: pairs[i],
+                type: Variable.SCALAR_TYPE,
+                value: pairs[i + 1]
+            });
+        }
+        return variables;
+    }
+
+    buildLists (pairs) {
+        if (pairs === null) return [];
+        const lists = [];
+        // for (let i = 0; i < pairs.length - 1; i += 2) {
+
+        // }
+        // TODO watchers
+        console.log('TODO: watchers');
+        return lists;
+    }
+
+    buildScripts (thing) { return null; }
+    buildComments (thing) { return null; }
+    fixCommentRefs (thing1, thing2) { return null; }
+
+
+
 }
 
 module.exports = SBParser;
