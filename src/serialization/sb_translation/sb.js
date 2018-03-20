@@ -38,16 +38,17 @@ class SBParser {
         /* eslint-enable no-undef */
 
         this.data = SmartBuffer.fromBuffer(input);
-        this.targets = {};
-        this.costumes = {};
-        this.sounds = {};
+        // this.targets = {};
+        // this.costumes = {};
+        // this.sounds = {};
         this.parseSBHeader();
         this.projectInfoObjectTable = this.parseObjectTable();
         // console.log(`Done! Obj Table: ${JSON.stringify(objTable)}`);
 
         this.contentObjectTable = this.parseObjectTable();
+        // this.fixReferences();
 
-        this.targets = this.parseProject();
+        // this.targets = this.parseProject();
 
     }
 
@@ -63,7 +64,8 @@ class SBParser {
         return {
             classId: classId,
             className: objData && objData.className ? objData.className : '',
-            objData: objData && objData.data ? objData.data : objData, // maybe {} if not provided...?
+            objData: objData && objData.hasOwnProperty('data') ?
+                objData.data : objData, // maybe {} if not provided...?
             classVersion: optClassVersion, // undefined if fixed format or number
             fields: optFields
         };
@@ -103,12 +105,13 @@ class SBParser {
         }
 
         const objCount = data.readInt32BE();
-        const objTable = [];
+        let objTable = [];
         for (let i = 0; i < objCount; i++) {
-            objTable[i] = this.parseObj();
+            objTable[i] = this.parseObj(objTable);
         }
 
-        this.fixReferences(objTable);
+        objTable = objTable.map(o => this.decodeSqueakImage(o));
+        objTable = this.fixReferences(objTable);
 
         return objTable;
     }
@@ -127,7 +130,14 @@ class SBParser {
             for (let i = 0; i < fieldCount; i++) {
                 fields[i] = this.parseField();
             }
-            result = this.obj(classId, {}, classVersion, fields);
+
+            let objData = null;
+            if (classId === 124 || classId === 125 || classId === 155 ||
+                classId === 162 || classId === 164 || classId === 175) {
+                objData = {};
+            }
+
+            result = this.obj(classId, objData, classVersion, fields);
         }
         return result;
     }
@@ -159,7 +169,7 @@ class SBParser {
             i += data.readUInt8();
             return new Ref(i);
         }
-        return this.parseFixedFormat(classId);
+        return this.obj(classId, this.parseFixedFormat(classId));
     }
 
     parseFixedFormat (classId) {
@@ -320,6 +330,10 @@ class SBParser {
         }
     }
 
+    decodeSqueakImage (o) {
+        return o; // TODO fill this in
+    }
+
     // decodeSqueakImage(imageObj) {
     //     // TODO Create a new Rectangle
     //
@@ -362,14 +376,47 @@ class SBParser {
     //     // TODO
     //     return null;
     // }
+
     fixReferences (objTable) {
-        const thisParser = this;
-        const deRefIfRef = function (el, ot) {
-            if (el instanceof Ref) {
-                return thisParser.deRef(el, ot);
-            }
-            return el;
-        };
+        // Note: This function relies on earlier modifications of the array being
+        // affected by later modifications of the array (e.g. by later iterations of the loop)
+        // e.g. recall that if you have nested refs like the following:
+        // objTable = [
+        //     [Ref(2)],
+        //     ['someData', 7, null, true},
+        //     [Ref(3), Ref(5)],
+        //     [Ref(4)],
+        //     [8, 9, 10],
+        //     ['world']
+        // ]
+        //
+        // executing the following lines of code:
+        // objTable[0][0] = objTable[2];
+        // objTable[2][0] = objTable[3];
+        // objTable[2][1] = objTable[5];
+        // objTable[3][0] = objTable[4];
+        //
+        // the resulting array will be:
+        // objTable = [
+        //     [[[[8, 9, 10]] , ['world']]],
+        //     ['someData', 7, null, true],
+        //     [[[8, 9, 10]] ,  ['world']],
+        //     [[8, 9, 10]]
+        //     [8, 9, 10]
+        //     ['world']
+        // ]
+        // The main thing to note here, and the reason for this comment is that
+        // since the array is being modified in place, and because JavaScript is
+        // 'call by sharing' (http://jasonjl.me/blog/2014/10/15/javascript/),
+        // assigning an earlier value in the object table to a later value
+        // e.g. objTable[0] = objTable[3]
+        // means that later changes to objTable[3] will also change objTable[0]
+        // because objTable[0] is referring to a the reference for objTable[3]
+        // and not a copy of the value objTable[3] at the point in time that it
+        // was assigned to objTable[0].
+        // This means that this fixReferences function is able to *completely*
+        // dereference all the 'Ref' objects in the objTable (including nested references
+        // like in the example above) without the use of any recursive calls.
 
         // Go through object references that store references to other objects
         // in the table and dereference them
@@ -377,22 +424,44 @@ class SBParser {
         for (const i in objTable) {
             const currObj = objTable[i];
             const currClassId = currObj.classId;
-            if (currClassId >= 20 && currClassId <= 29) {
+            if ((currClassId >= 20) && (currClassId <= 29)) {
                 // These are collection elements
-                let collection = currObj.objData;
+
                 // Right now, these collections contain refs to other objects
                 // in the object table, dereference these.
-                collection = collection.map(el => deRefIfRef(el, objTable));
-                objTable[i].objData = collection; // TODO clean this up
+                const collection = currObj.objData;
+                for (const j in collection) {
+                    const el = collection[j];
+                    if (el instanceof Ref) collection[j] = this.deRef(el, objTable);
+                }
+                objTable[i].objData = collection;
+
+                // The following does not work (to replace the above)
+                //
+                // let collection = currObj.objData;
+                // collection = collection.map(el => deRefIfRef(el));
+                // objTable[i].objData = collection;
+                //
+                // Even though this commented out block recognizes that map
+                // returns a modified copy of the original array, and accounts
+                // for that fact by re-assigning the collection object, this
+                // code does not work because the mapped function is not acting
+                // on the objTable sub-data directly, but rather a copy of it
+                // created by the map function (e.g. there's two kinds of
+                // copying going on there)
             }
             if (currClassId > SBParser.OBJ_REF) {
                 // De-reference the fields of a 'user-defined' Scratch Object..
-                let currObjFields = currObj.fields;
-                currObjFields = currObjFields.map(el => deRefIfRef(el, objTable));
-                objTable[i].fields = currObjFields; // TODO clean this up
+                const currObjFields = currObj.fields;
+                for (const j in currObjFields) {
+                    const el = currObjFields[j];
+                    if (el instanceof Ref) currObjFields[j] = this.deRef(el, objTable);
+                }
+                objTable[i].fields = currObjFields;
             }
 
         }
+        return objTable;
     }
 
     /**
@@ -409,10 +478,14 @@ class SBParser {
         const referencedEntry = objTable[r.index];
         return (referencedEntry.objData === null) ? referencedEntry : referencedEntry.objData;
     }
+}
 
-    parseProject () {
-        const objTable = this.contentObjectTable;
+class SBToSB3 {
+    constructor (sbParser) {
+        this.targets = this.parseProject(sbParser.contentObjectTable);
+    }
 
+    parseProject (objTable) {
         // TODO record sprite names
         this.recordSpriteNames();
 
@@ -541,12 +614,43 @@ class SBParser {
         return lists;
     }
 
-    buildScripts (thing) { return null; }
+    // scriptsObj is an array of stacks of blocks on a given sprite's workspace
+    // each stack is also an array (of arrays) of the form:
+    // [[x,y] [blocks]]
+    // where the first element of the stack is a 2-element array representing
+    // the x-y position on the workspace of the top-level block in the stack
+    // the second element of the stack is an array of blocks in the stack
+    buildScripts (scriptsObj) {
+        if (!Array.isArray(scriptsObj[0])) return [];
+        const result = [];
+        for (const i in scriptsObj) {
+            const stack = scriptsObj[i];
+            // Before we do anything, make sure that the 'stack of blocks'
+            //  is not actually just a comment.
+            // If it is, skip it for now and move on to the next stack
+            const topOfStack = stack[1][0];
+            if (topOfStack && (topOfStack[0] === 'scratchComment')) continue; // skip comments
+            const topBlock = this.sbBlockArrayToStack(stack[1]);
+            topBlock.topLevel = true;
+            topBlock.x = stack[0][0].objData;
+            topBlock.y = stack[0][1].objData;
+            result.push(topBlock);
+        }
+        return result;
+    }
+
+    sbBlockArrayToStack (blockArray) {
+        return {};
+        // TODO figure out what to do here. Seems like the quickest (but less ideal)
+        // option is to translate this to sb2 using the action script code as a
+        // reference and then calling the sb2 parser on it...
+    }
+
     buildComments (thing) { return null; }
     fixCommentRefs (thing1, thing2) { return null; }
-
-
-
 }
 
-module.exports = SBParser;
+module.exports = {
+    SBParser: SBParser,
+    SBToSB3: SBToSB3
+};
