@@ -39,12 +39,11 @@ const loadSound = function (sound, runtime) {
         log.error('No audio engine present; cannot load sound asset: ', sound.md5);
         return Promise.resolve(sound);
     }
-    const idParts = StringUtil.splitFirst(sound.md5, '.');
-    const md5 = idParts[0];
-    const ext = idParts[1].toLowerCase();
+
+    const md5 = sound.md5; // This should be just the md5 (without any file extension)
+    const ext = sound.dataFormat;
     return runtime.storage.load(runtime.storage.AssetType.Sound, md5, ext)
         .then(soundAsset => {
-            sound.dataFormat = ext;
             return loadSoundFromAsset(sound, soundAsset, runtime);
         });
 };

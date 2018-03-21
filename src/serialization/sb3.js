@@ -94,16 +94,19 @@ const parseScratchObject = function (object, runtime, extensions, zip) {
             name: costumeSource.name,
             bitmapResolution: costumeSource.bitmapResolution,
             rotationCenterX: costumeSource.rotationCenterX,
-            rotationCenterY: costumeSource.rotationCenterY
+            rotationCenterY: costumeSource.rotationCenterY,
+            md5: costumeSource.md5, // this should just be the md5 without the file extension
+            dataFormat: costumeSource.dataFormat
         };
-        const dataFormat =
-            costumeSource.dataFormat ||
-            (costumeSource.assetType && costumeSource.assetType.runtimeFormat) || // older format
-            'png'; // if all else fails, guess that it might be a PNG
-        const costumeMd5 = `${costumeSource.assetId}.${dataFormat}`;
-        costume.md5 = costumeMd5;
-        return deserializeCostume(costumeSource, runtime, zip)
-            .then(() => loadCostume(costumeMd5, costume, runtime));
+        // const dataFormat =
+        //     // costumeSource.dataFormat ||
+        //     // (costumeSource.assetType && costumeSource.assetType.runtimeFormat) || // older format
+        //     // 'png'; // if all else fails, guess that it might be a PNG
+        // const costumeMd5 = `${costumeSource.assetId}.${dataFormat}`;
+        // costume.md5 = costumeMd5;
+        // TODO why was I passing in costumeSource instead of costume...?
+        return deserializeCostume(costume, runtime, zip)
+            .then(() => loadCostume(/*costumeMd5,*/ costume, runtime));
         // Only attempt to load the costume after the deserialization
         // process has been completed
     });
@@ -116,7 +119,8 @@ const parseScratchObject = function (object, runtime, extensions, zip) {
             sampleCount: soundSource.sampleCount,
             soundID: soundSource.soundID,
             name: soundSource.name,
-            md5: soundSource.md5,
+            md5: soundSource.md5, // this should just be the md5
+            dataFormat: soundSource.dataFormat,
             data: null
         };
         return deserializeSound(soundSource, runtime, zip)

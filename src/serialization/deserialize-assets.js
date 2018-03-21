@@ -12,18 +12,19 @@ const log = require('../util/log');
  * occurred.
  */
 const deserializeSound = function (sound, runtime, zip) {
-    const fileName = sound.md5; // The md5 property has the full file name
+    const md5 = sound.md5;
+    const fileName = sound.md5 + sound.dataFormat; // The md5 should only be the md5, no file ext
     const storage = runtime.storage;
     if (!storage) {
         log.error('No storage module present; cannot load sound asset: ', fileName);
         return Promise.resolve(null);
     }
 
-    const assetId = sound.assetId;
+    // const assetId = sound.assetId;
 
     // TODO Is there a faster way to check that this asset
     // has already been initialized?
-    if (storage.get(assetId)) {
+    if (storage.get(md5)) {
         // This sound has already been cached.
         return Promise.resolve(null);
     }
@@ -53,7 +54,7 @@ const deserializeSound = function (sound, runtime, zip) {
             storage.AssetType.Sound,
             dataFormat,
             data,
-            assetId
+            md5
         );
     });
 };
@@ -70,10 +71,11 @@ const deserializeSound = function (sound, runtime, zip) {
  */
 const deserializeCostume = function (costume, runtime, zip) {
     const storage = runtime.storage;
-    const assetId = costume.assetId;
-    const fileName = costume.md5 ?
-        costume.md5 :
-        `${assetId}.${costume.dataFormat}`; // The md5 property has the full file name
+    // const assetId = costume.assetId;
+    const md5 = costume.md5;
+    const fileName = md5 + costume.dataFormat;
+        // costume.md5 :
+        // `${assetId}.${costume.dataFormat}`; // The md5 property has the full file name
 
     if (!storage) {
         log.error('No storage module present; cannot load costume asset: ', fileName);
@@ -83,7 +85,7 @@ const deserializeCostume = function (costume, runtime, zip) {
 
     // TODO Is there a faster way to check that this asset
     // has already been initialized?
-    if (storage.get(assetId)) {
+    if (storage.get(md5)) {
         // This costume has already been cached.
         return Promise.resolve(null);
     }
@@ -123,7 +125,7 @@ const deserializeCostume = function (costume, runtime, zip) {
             assetType,
             dataFormat,
             data,
-            assetId
+            md5
         );
     });
 };

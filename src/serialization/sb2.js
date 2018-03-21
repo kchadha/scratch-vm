@@ -13,9 +13,9 @@ const log = require('../util/log');
 const uid = require('../util/uid');
 const specMap = require('./sb2_specmap');
 const Variable = require('../engine/variable');
-
-const {loadCostume} = require('../import/load-costume.js');
-const {loadSound} = require('../import/load-sound.js');
+const StringUtil = require('../util/string-util');
+const {loadCostume} = require('../import/load-costume');
+const {loadSound} = require('../import/load-sound');
 
 /**
  * Convert a Scratch 2.0 procedure string (e.g., "my_procedure %s %b %n")
@@ -219,14 +219,19 @@ const parseScratchObject = function (object, runtime, extensions, topLevel) {
     if (object.hasOwnProperty('costumes')) {
         for (let i = 0; i < object.costumes.length; i++) {
             const costumeSource = object.costumes[i];
+            const idParts = StringUtil.splitFirst(costumeSource.baseLayerMD5, '.');
+            const md5 = idParts[0];
+            const ext = idParts[1].toLowerCase();
             const costume = {
                 name: costumeSource.costumeName,
                 bitmapResolution: costumeSource.bitmapResolution || 1,
                 rotationCenterX: costumeSource.rotationCenterX,
                 rotationCenterY: costumeSource.rotationCenterY,
+                md5: md5,
+                dataFormat: ext,
                 skinId: null
             };
-            costumePromises.push(loadCostume(costumeSource.baseLayerMD5, costume, runtime));
+            costumePromises.push(loadCostume(/*costumeSource.baseLayerMD5, */ costume, runtime));
         }
     }
     // Sounds from JSON
@@ -234,13 +239,17 @@ const parseScratchObject = function (object, runtime, extensions, topLevel) {
     if (object.hasOwnProperty('sounds')) {
         for (let s = 0; s < object.sounds.length; s++) {
             const soundSource = object.sounds[s];
+            const idParts = StringUtil.splitFirst(soundSource.md5, '.');
+            const md5 = idParts[0];
+            const ext = idParts[1].toLowerCase();
             const sound = {
                 name: soundSource.soundName,
                 format: soundSource.format,
                 rate: soundSource.rate,
                 sampleCount: soundSource.sampleCount,
                 soundID: soundSource.soundID,
-                md5: soundSource.md5,
+                md5: md5,
+                dataFormat: ext,
                 data: null
             };
             soundPromises.push(loadSound(sound, runtime));

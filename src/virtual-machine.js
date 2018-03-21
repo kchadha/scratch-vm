@@ -377,8 +377,8 @@ class VirtualMachine extends EventEmitter {
      * @property {number} [bitmapResolution] - the resolution scale for a bitmap costume.
      * @returns {?Promise} - a promise that resolves when the costume has been added
      */
-    addCostume (md5ext, costumeObject) {
-        return loadCostume(md5ext, costumeObject, this.runtime).then(() => {
+    addCostume (/* md5ext,*/ costumeObject) {
+        return loadCostume(/* md5ext,*/ costumeObject, this.runtime).then(() => {
             this.editingTarget.addCostume(costumeObject);
             this.editingTarget.setCostume(
                 this.editingTarget.getCostumes().length - 1
@@ -394,8 +394,8 @@ class VirtualMachine extends EventEmitter {
     duplicateCostume (costumeIndex) {
         const originalCostume = this.editingTarget.getCostumes()[costumeIndex];
         const clone = Object.assign({}, originalCostume);
-        const md5ext = `${clone.assetId}.${clone.dataFormat}`;
-        return loadCostume(md5ext, clone, this.runtime).then(() => {
+        // const md5ext = `${clone.assetId}.${clone.dataFormat}`;
+        return loadCostume(/* md5ext, */ clone, this.runtime).then(() => {
             this.editingTarget.addCostume(clone, costumeIndex + 1);
             this.editingTarget.setCostume(costumeIndex + 1);
             this.emitTargetsUpdate();
@@ -490,12 +490,13 @@ class VirtualMachine extends EventEmitter {
             // is updated as below.
             sound.format = '';
             const storage = this.runtime.storage;
-            sound.assetId = storage.builtinHelper.cache(
+            sound.md5 = storage.builtinHelper.cache(
                 storage.AssetType.Sound,
                 storage.DataFormat.WAV,
                 soundEncoding
             );
-            sound.md5 = `${sound.assetId}.${sound.dataFormat}`;
+            sound.dataFormat = storage.DataFormat.WAV;
+            // sound.md5 = `${sound.assetId}.${sound.dataFormat}`;
         }
         // If soundEncoding is null, it's because gui had a problem
         // encoding the updated sound. We don't want to store anything in this
@@ -513,15 +514,21 @@ class VirtualMachine extends EventEmitter {
     }
 
     /**
-     * Get an SVG string from storage.
+     * Get an SVG string from storage. // TODO check where this function gets called!!!
      * @param {int} costumeIndex - the index of the costume to be got.
      * @return {string} the costume's SVG string, or null if it's not an SVG costume.
      */
-    getCostumeSvg (costumeIndex) {
-        const id = this.editingTarget.getCostumes()[costumeIndex].assetId;
-        if (id && this.runtime && this.runtime.storage &&
-                this.runtime.storage.get(id).dataFormat === 'svg') {
-            return this.runtime.storage.get(id).decodeText();
+    getCostumeSvg (costumeIndex) { // TODO think about this and the future of asset ID vs. md5 / dirty flag
+        const id = this.editingTarget.getCostumes()[costumeIndex].md5;
+        if (id && this.runtime && this.runtime.storage) {
+            const storedAsset = this.runtime.storage.get(id);
+            if (storedAsset.dataFormat === 'svg') {
+
+                //     }
+                // } &&
+                //         this.runtime.storage.get(id).dataFormat === 'svg') {
+                return storedAsset.decodeText();
+            }
         }
         return null;
     }
@@ -541,7 +548,7 @@ class VirtualMachine extends EventEmitter {
             this.runtime.renderer.updateSVGSkin(costume.skinId, svg, [rotationCenterX, rotationCenterY]);
         }
         const storage = this.runtime.storage;
-        costume.assetId = storage.builtinHelper.cache(
+        costume.md5 = storage.builtinHelper.cache(
             storage.AssetType.ImageVector,
             storage.DataFormat.SVG,
             (new TextEncoder()).encode(svg)
@@ -549,7 +556,7 @@ class VirtualMachine extends EventEmitter {
         // If we're in here, we've edited an svg in the vector editor,
         // so the dataFormat should be 'svg'
         costume.dataFormat = storage.DataFormat.SVG;
-        costume.md5 = `${costume.assetId}.${costume.dataFormat}`;
+        // costume.md5 = `${costume.assetId}.${costume.dataFormat}`;
         this.emitTargetsUpdate();
     }
 
@@ -563,8 +570,12 @@ class VirtualMachine extends EventEmitter {
      * @property {number} [bitmapResolution] - the resolution scale for a bitmap backdrop.
      * @returns {?Promise} - a promise that resolves when the backdrop has been added
      */
-    addBackdrop (md5ext, backdropObject) {
-        return loadCostume(md5ext, backdropObject, this.runtime).then(() => {
+    addBackdrop (/* md5ext,*/ backdropObject) {
+        if (typeof backdropObject === 'string') {
+            console.log('Deprecated use of md5Ext.');
+            return;
+        }
+        return loadCostume(/* md5ext, */ backdropObject, this.runtime).then(() => {
             const stage = this.runtime.getTargetForStage();
             stage.addCostume(backdropObject);
             stage.setCostume(stage.getCostumes().length - 1);
