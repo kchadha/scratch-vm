@@ -27,6 +27,9 @@
     "watch": "webpack --progress --colors --watch",
     "version": "json -f package.json -I -e \"this.repository.sha = '$(git log -n1 --pretty=format:%H)'\""
   },
+  "dependencies": {
+    "scratch-parser": "github:kchadha/scratch-parser#fix-for-recorded-sounds"
+  },
   "devDependencies": {
     "adm-zip": "0.4.7",
     "babel-core": "^6.24.1",
