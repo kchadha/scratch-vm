@@ -191,6 +191,8 @@ const globalBroadcastMsgStateGenerator = (function () {
     };
 }());
 
+const visibleMonitors = {};
+
 /**
  * Parse a single "Scratch object" and create all its in-memory VM objects.
  * TODO: parse the "info" section, especially "savedExtensions"
@@ -202,8 +204,13 @@ const globalBroadcastMsgStateGenerator = (function () {
  */
 const parseScratchObject = function (object, runtime, extensions, topLevel) {
     if (!object.hasOwnProperty('objName')) {
-        // Watcher/monitor - skip this object until those are implemented in VM.
-        // @todo
+        if (object.visible) {
+            if (!visibleMonitors.hasOwnProperty(object.target)) visibleMonitors[object.target] = [];
+            visibleMonitors[object.target].push({
+                sb3Opcode: object.cmd === 'getVar:' ? 'data_variable' : specMap[object.cmd].opcode,
+                param: object.param
+            });
+        }
         return Promise.resolve(null);
     }
     // Blocks container for this object.
@@ -431,7 +438,8 @@ const sb2import = function (json, runtime, optForceSprite) {
     return parseScratchObject(json, runtime, extensions, !optForceSprite)
         .then(targets => ({
             targets,
-            extensions
+            extensions,
+            visibleMonitors
         }));
 };
 

@@ -266,7 +266,7 @@ class Blocks {
             const newBlocks = adapter(e);
             // A create event can create many blocks. Add them all.
             for (let i = 0; i < newBlocks.length; i++) {
-                this.createBlock(newBlocks[i]);
+                this.createBlock(newBlocks[i], optRuntime);
             }
             break;
         }
@@ -365,7 +365,7 @@ class Blocks {
      * Block management: create blocks and scripts from a `create` event
      * @param {!object} block Blockly create event to be processed
      */
-    createBlock (block) {
+    createBlock (block, optRuntime) {
         // Does the block already exist?
         // Could happen, e.g., for an unobscured shadow.
         if (this._blocks.hasOwnProperty(block.id)) {
@@ -373,6 +373,13 @@ class Blocks {
         }
         // Create new block.
         this._blocks[block.id] = block;
+        if (optRuntime && optRuntime.initialVariableMonitors.indexOf(block.id) !== -1) {
+            this.changeBlock({
+                id: block.id,
+                value: true,
+                element: 'checkbox'
+            });
+        }
         // Push block id to scripts array.
         // Blocks are added as a top-level stack if they are marked as a top-block
         // (if they were top-level XML in the event).
@@ -435,10 +442,11 @@ class Blocks {
             const isSpriteSpecific = optRuntime.monitorBlockInfo.hasOwnProperty(block.opcode) &&
                 optRuntime.monitorBlockInfo[block.opcode].isSpriteSpecific;
             block.targetId = isSpriteSpecific ? optRuntime.getEditingTarget().id : null;
-            
+
             if (wasMonitored && !block.isMonitored) {
                 optRuntime.requestRemoveMonitor(block.id);
             } else if (!wasMonitored && block.isMonitored) {
+                debugger;
                 optRuntime.requestAddMonitor(MonitorRecord({
                     // @todo(vm#564) this will collide if multiple sprites use same block
                     id: block.id,

@@ -40,9 +40,9 @@ class Scratch3MotionBlocks {
 
     getMonitored () {
         return {
-            motion_xposition: {isSpriteSpecific: true},
-            motion_yposition: {isSpriteSpecific: true},
-            motion_direction: {isSpriteSpecific: true}
+            motion_xposition: {isSpriteSpecific: true, id: 'xposition'},
+            motion_yposition: {isSpriteSpecific: true, id: 'yposition'},
+            motion_direction: {isSpriteSpecific: true, id: 'direction'}
         };
     }
 

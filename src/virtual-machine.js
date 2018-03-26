@@ -12,6 +12,7 @@ const StringUtil = require('./util/string-util');
 const formatMessage = require('format-message');
 const validate = require('scratch-parser');
 
+const MonitorRecord = require('./engine/monitor-record');
 const Variable = require('./engine/variable');
 
 const {loadCostume} = require('./import/load-costume.js');
@@ -301,8 +302,10 @@ class VirtualMachine extends EventEmitter {
             return Promise.reject('Unable to verify Scratch Project version.');
         };
         return deserializePromise()
-            .then(({targets, extensions}) =>
-                this.installTargets(targets, extensions, true));
+            .then(({targets, extensions, visibleMonitors}) =>
+                this.installTargets(targets, extensions, true, visibleMonitors))
+            .then(visibleMonitors =>
+                this.importMonitors(visibleMonitors));
     }
 
     /**
@@ -312,7 +315,7 @@ class VirtualMachine extends EventEmitter {
      * @param {boolean} wholeProject - set to true if installing a whole project, as opposed to a single sprite.
      * @returns {Promise} resolved once targets have been installed
      */
-    installTargets (targets, extensions, wholeProject) {
+    installTargets (targets, extensions, wholeProject, visibleMonitors) {
         const extensionPromises = [];
         extensions.extensionIDs.forEach(extensionID => {
             if (!this.extensionManager.isExtensionLoaded(extensionID)) {
@@ -344,9 +347,66 @@ class VirtualMachine extends EventEmitter {
             this.emitTargetsUpdate();
             this.emitWorkspaceUpdate();
             this.runtime.setEditingTarget(this.editingTarget);
+            return Promise.resolve(visibleMonitors);
         });
     }
 
+    importMonitors (visibleMonitors) {
+        if (!visibleMonitors) return;
+        for (const targetName in visibleMonitors) {
+            if (!visibleMonitors.hasOwnProperty(targetName)) continue;
+            const monitorsForTarget = visibleMonitors[targetName];
+            for (const i in monitorsForTarget) {
+                const monitorObject = monitorsForTarget[i];
+                const monitorTarget = (targetName === 'Stage') ? this.runtime.getTargetForStage() :
+                    this.runtime.getSpriteTargetByName(targetName);
+                const opcode = monitorObject.sb3Opcode;
+                debugger;
+                let id = '';
+                let blockParams = Object.create(null);
+                if (opcode === 'data_variable') {
+                    const monitoredVariable = monitorTarget.getVariableByName(monitorObject.param);
+                    id = monitoredVariable.id;
+                    blockParams.VARIABLE = monitoredVariable.name;
+                    // push this id onto the initialVariableMonitors list so that
+                    // when the corresponding variable block actually gets created
+                    // we can add this monitor as well
+                    // this.runtime.initialVariableMonitors.push(id);
+                    //continue;
+                }
+                // TODO check for lists
+                else {
+                    id = this._getBlockIdForMonitor(opcode, monitorTarget.id);
+                    blockParams = this.monitorBlocks._getBlockParams(this.monitorBlocks.getBlock(id));
+                }
+                // this.runtime.flyoutBlocks.changeBlock({
+                //     id: id,
+                //     element: 'checkbox',
+                //     value: true // The monitor should be visible
+                // });
+                const monitor = MonitorRecord({
+                    id: id,
+                    targetId: monitorTarget.id,
+                    spriteName: targetName,
+                    opcode: monitorObject.sb3Opcode,
+                    params: blockParams,
+                    value: ''
+                });
+                this.runtime.requestAddMonitor(monitor);
+            }
+        }
+    }
+    _getBlockIdForMonitor (opcode, targetId) {
+        if (!this.runtime.monitorBlockInfo.hasOwnProperty(opcode)) {
+            log.error(`Could not find monitor info for block: ${opcode}`);
+            return;
+        }
+        const monitorBlock = this.runtime.monitorBlockInfo[opcode];
+        if (monitorBlock.isSpriteSpecific) {
+            return `${targetId}_${monitorBlock.id}`;
+        }
+        return monitorBlock.id;
+    }
     /**
      * Add a single sprite from the "Sprite2" (i.e., SB2 sprite) format.
      * @param {string} json JSON string representing the sprite.

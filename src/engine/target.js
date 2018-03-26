@@ -161,6 +161,33 @@ class Target extends EventEmitter {
     }
 
     /**
+     * Look up a variable object.
+     * Search begins for local variables; then look for globals.
+     * @param {string} name Name of the variable.
+     * @return {?Variable} Variable object or null if it cannot be found
+     */
+    getVariableByName (name) {
+        // If we have a local copy, return it.
+        for (const varId in this.variables) {
+            const currVar = this.variables[varId];
+            if (currVar.type === Variable.SCALAR_TYPE &&
+                currVar.name === name) return currVar;
+        }
+
+        // If the stage has a global copy, return it.
+        if (this.runtime && !this.isStage) {
+            const stage = this.runtime.getTargetForStage();
+            for (const varId in stage.variables) {
+                const currVar = stage.variables[varId];
+                if (currVar.type === Variable.SCALAR_TYPE &&
+                    currVar.name === name) return currVar;
+            }
+        }
+        // Didn't find a variable with the given name
+        return null;
+    }
+
+    /**
     * Look up a list object for this target, and create it if one doesn't exist.
     * Search begins for local lists; then look for globals.
     * @param {!string} id Id of the list.

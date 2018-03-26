@@ -53,10 +53,10 @@ class Scratch3SensingBlocks {
 
     getMonitored () {
         return {
-            sensing_answer: {},
-            sensing_loudness: {},
-            sensing_timer: {},
-            sensing_current: {}
+            sensing_answer: {id: 'answer'},
+            sensing_loudness: {id: 'loudness'},
+            sensing_timer: {id: 'timer'},
+            sensing_current: {id: 'current'}
         };
     }
 

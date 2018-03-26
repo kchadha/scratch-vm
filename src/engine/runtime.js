@@ -269,6 +269,8 @@ class Runtime extends EventEmitter {
          * @type {Profiler}
          */
         this.profiler = null;
+
+        this.initialVariableMonitors = [];
     }
 
     /**
