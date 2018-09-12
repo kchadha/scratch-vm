@@ -12,6 +12,7 @@ const Color = require('../util/color');
 const log = require('../util/log');
 const uid = require('../util/uid');
 const StringUtil = require('../util/string-util');
+const xmlEscape = require('../util/xml-escape');
 const specMap = require('./sb2_specmap');
 const Comment = require('../engine/comment');
 const Variable = require('../engine/variable');
@@ -193,7 +194,10 @@ const parseScripts = function (scripts, blocks, addBroadcastMsg, getVariableId, 
  */
 const generateVariableIdGetter = (function () {
     let globalVariableNameMap = {};
-    const namer = (targetId, name) => `${targetId}-${name}`;
+    // Create a unique ID for the variable, but since variable ids get serialized
+    // when sent as xml to scratch-blocks, the name portion of the id should be
+    // xmlEscaped. See #1458
+    const namer = (targetId, name) => `${targetId}-${xmlEscape(name)}`;
     return function (targetId, topLevel) {
         // Reset the global variable map if topLevel
         if (topLevel) globalVariableNameMap = {};
@@ -436,9 +440,10 @@ const parseScratchObject = function (object, runtime, extensions, topLevel, zip)
     if (object.hasOwnProperty('variables')) {
         for (let j = 0; j < object.variables.length; j++) {
             const variable = object.variables[j];
+            const variableName = StringUtil.stripControlChars(variable.name);
             const newVariable = new Variable(
-                getVariableId(variable.name),
-                variable.name,
+                getVariableId(variableName),
+                variableName,
                 Variable.SCALAR_TYPE,
                 variable.isPersistent
             );
@@ -528,9 +533,10 @@ const parseScratchObject = function (object, runtime, extensions, topLevel, zip)
     if (object.hasOwnProperty('lists')) {
         for (let k = 0; k < object.lists.length; k++) {
             const list = object.lists[k];
+            const listName = StringUtil.stripControlChars(list.listName);
             const newVariable = new Variable(
-                getVariableId(list.listName),
-                list.listName,
+                getVariableId(listName),
+                listName,
                 Variable.LIST_TYPE,
                 false
             );
@@ -954,12 +960,18 @@ const parseBlock = function (sb2block, addBroadcastMsg, getVariableId, extension
             // Add as a field on this block.
             activeBlock.fields[expectedArg.fieldName] = {
                 name: expectedArg.fieldName,
-                value: providedArg
+                // The provided arg is the display name for the field,
+                // since some fields refer to user defined variables, escape
+                // any control characters which break loading/displaying the blocks
+                value: StringUtil.stripControlChars(providedArg)
             };
 
             if (expectedArg.fieldName === 'VARIABLE' || expectedArg.fieldName === 'LIST') {
                 // Add `id` property to variable fields
-                activeBlock.fields[expectedArg.fieldName].id = getVariableId(providedArg);
+                activeBlock.fields[expectedArg.fieldName].id = getVariableId(
+                    // When looking up the id of the variable, use the
+                    // variable name with control characters stripped out
+                    StringUtil.stripControlChars(providedArg));
             } else if (expectedArg.fieldName === 'BROADCAST_OPTION') {
                 // Add the name in this field to the broadcast msg name map.
                 // Also need to provide the fields[fieldName] object,

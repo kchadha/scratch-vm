@@ -36,6 +36,15 @@ class StringUtil {
         return [text, null];
         
     }
+
+    /**
+     * Strip control characters out of the string by replacing them with the empty string.
+     * @param {!string} unsafe Unsafe string possibly containing unicode control characters.
+     * @return {string} String with control characters removed.
+     */
+    static stripControlChars (unsafe) {
+        return unsafe.replace(/[\x00-\x1F\x7F-\x9F]/g, ''); /* eslint-disable-line no-control-regex */
+    }
 }
 
 module.exports = StringUtil;
