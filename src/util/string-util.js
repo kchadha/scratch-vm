@@ -34,11 +34,13 @@ class StringUtil {
             return [text.substring(0, index), text.substring(index + 1)];
         }
         return [text, null];
-        
+
     }
 
     /**
      * Strip control characters out of the string by replacing them with the empty string.
+     * CC-BY-SA: Rory O'Kane
+     * https://stackoverflow.com/questions/26741455/how-to-remove-control-characters-from-string
      * @param {!string} unsafe Unsafe string possibly containing unicode control characters.
      * @return {string} String with control characters removed.
      */
