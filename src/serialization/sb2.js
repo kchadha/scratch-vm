@@ -225,7 +225,9 @@ const globalBroadcastMsgStateGenerator = (function () {
                 if (name === '') {
                     name = emptyStringName;
                 }
-                broadcastMsgNameMap[name] = `broadcastMsgId-${name}`;
+                // Escape any XML characters in the message name since this ID will
+                // eventually be serialized to XML
+                broadcastMsgNameMap[name] = `broadcastMsgId-${xmlEscape(name)}`;
                 allBroadcastFields.push(field);
                 return broadcastMsgNameMap[name];
             },
@@ -811,7 +813,13 @@ const parseBlock = function (sb2block, addBroadcastMsg, getVariableId, extension
     // non-positional named Scratch VM arguments.
     for (let i = 0; i < blockMetadata.argMap.length; i++) {
         const expectedArg = blockMetadata.argMap[i];
-        const providedArg = sb2block[i + 1]; // (i = 0 is opcode)
+        // Since the provided arg can be a simple field name containing a user-defined string,
+        // make sure to strip it of any control characters (these break blocks loading)
+        let providedArg = sb2block[i + 1]; // (i = 0 is opcode)
+        if (typeof providedArg === 'string') {
+            providedArg = StringUtil.stripControlChars(providedArg);
+        }
+
         // Whether the input is obscuring a shadow.
         let shadowObscured = false;
         // Positional argument is an input.
@@ -937,7 +945,9 @@ const parseBlock = function (sb2block, addBroadcastMsg, getVariableId, extension
                 // replace this field's value with messageN
                 // once we can traverse through all the existing message names
                 // and come up with a fresh messageN.
-                const broadcastId = addBroadcastMsg(fieldValue, fields[fieldName]);
+                // const broadcastMsgName = StringUtil.stripControlChars(fieldValue);
+                const broadcastMsgName = fieldValue;
+                const broadcastId = addBroadcastMsg(broadcastMsgName, fields[fieldName]);
                 fields[fieldName].id = broadcastId;
                 fields[fieldName].variableType = expectedArg.variableType;
             }
@@ -963,15 +973,36 @@ const parseBlock = function (sb2block, addBroadcastMsg, getVariableId, extension
                 // The provided arg is the display name for the field,
                 // since some fields refer to user defined variables, escape
                 // any control characters which break loading/displaying the blocks
-                value: StringUtil.stripControlChars(providedArg)
+                value: providedArg // StringUtil.stripControlChars(providedArg)
             };
 
             if (expectedArg.fieldName === 'VARIABLE' || expectedArg.fieldName === 'LIST') {
+                // In Scratch 2.0, the variable/list menus on the respective variable/list
+                // blocks are non-droppable, however, many projects use "hacked blocks"
+                // to plug in a variable/list reporter to dynamically choose the variable block.
+                // These blocks don't import in 3.0 correctly. See #1520 for more info.
+                // Get the name of the variable/list from the block in this case.
+                const handleDroppedInBlocks = arg => {
+                    if (typeof arg === 'string') {
+                        return arg;
+                    }
+
+                    if (Array.isArray(arg) && arg.length > 1) {
+                        return handleDroppedInBlocks(arg[1]);
+
+                    }
+                };
+
+                providedArg = handleDroppedInBlocks(providedArg);
+
                 // Add `id` property to variable fields
                 activeBlock.fields[expectedArg.fieldName].id = getVariableId(
                     // When looking up the id of the variable, use the
                     // variable name with control characters stripped out
-                    StringUtil.stripControlChars(providedArg));
+                    providedArg);
+                    // StringUtil.stripControlChars(providedArg));
+                    // This switch statement is a hack because of list blocks....
+                    // typeof providedArg === 'string' ? providedArg : JSON.stringify(providedArg));
             } else if (expectedArg.fieldName === 'BROADCAST_OPTION') {
                 // Add the name in this field to the broadcast msg name map.
                 // Also need to provide the fields[fieldName] object,
@@ -980,7 +1011,9 @@ const parseBlock = function (sb2block, addBroadcastMsg, getVariableId, extension
                 // replace this field's value with messageN
                 // once we can traverse through all the existing message names
                 // and come up with a fresh messageN.
-                const broadcastId = addBroadcastMsg(providedArg, activeBlock.fields[expectedArg.fieldName]);
+                // const broadcastMsgName = StringUtil.stripControlChars(providedArg);
+                const broadcastMsgName = providedArg;
+                const broadcastId = addBroadcastMsg(broadcastMsgName, activeBlock.fields[expectedArg.fieldName]);
                 activeBlock.fields[expectedArg.fieldName].id = broadcastId;
             }
             const varType = expectedArg.variableType;
