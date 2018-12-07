@@ -546,6 +546,9 @@ const serialize = function (runtime, targetId) {
     // Assemble extension list
     obj.extensions = Array.from(extensions);
 
+    // Serialize cloud data state
+    obj.hasCloudData = runtime.hasCloudData();
+
     // Assemble metadata
     const meta = Object.create(null);
     meta.semver = '3.0.0';
