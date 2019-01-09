@@ -858,8 +858,13 @@ const parseScratchObject = function (object, runtime, extensions, zip) {
             }
         }
     }
+    let currentCostumePromise;
+
+    let currIndex = 0;
+
+    // sprite.costumes = new Array(object.costumes ? object.costumes.length : 0);
     // Costumes from JSON.
-    const costumePromises = (object.costumes || []).map(costumeSource => {
+    (object.costumes || []).forEach(costumeSource => {
         // @todo: Make sure all the relevant metadata is being pulled out.
         const costume = {
             // costumeSource only has an asset if an image is being uploaded as
@@ -880,13 +885,29 @@ const parseScratchObject = function (object, runtime, extensions, zip) {
             costumeSource.md5ext : `${costumeSource.assetId}.${dataFormat}`;
         costume.md5 = costumeMd5Ext;
         costume.dataFormat = dataFormat;
+
+        if (currIndex === object.currentCostume) {
+            currIndex++;
+            currentCostumePromise = deserializeCostume(costume, runtime, zip)
+                .then(() => loadCostume(costumeMd5Ext, costume, runtime))
+                .then(loadedCostume => {
+                    sprite.addCostumeAt(loadedCostume, currIndex);
+                });
+            return;
+        }
+
+        currIndex++;
         // deserializeCostume should be called on the costume object we're
         // creating above instead of the source costume object, because this way
         // we're always loading the 'sb3' representation of the costume
         // any translation that needs to happen will happen in the process
         // of building up the costume object into an sb3 format
-        return deserializeCostume(costume, runtime, zip)
-            .then(() => loadCostume(costumeMd5Ext, costume, runtime));
+        deserializeCostume(costume, runtime, zip)
+            .then(() => loadCostume(costumeMd5Ext, costume, runtime))
+            .then(loadedCostume => {
+                sprite.addCostumeAt(loadedCostume, currIndex);
+            });
+
         // Only attempt to load the costume after the deserialization
         // process has been completed
     });
@@ -1031,13 +1052,13 @@ const parseScratchObject = function (object, runtime, extensions, zip) {
     if (object.hasOwnProperty('draggable')) {
         target.draggable = object.draggable;
     }
-    Promise.all(costumePromises).then(costumes => {
-        sprite.costumes = costumes;
-    });
+    // currentCostumePromise.then(costumes => {
+    //     sprite.costumes = costumes;
+    // });
     Promise.all(soundPromises).then(sounds => {
         sprite.sounds = sounds;
     });
-    return Promise.all(costumePromises.concat(soundPromises)).then(() => target);
+    return Promise.all([currentCostumePromise].concat(soundPromises)).then(() => target);
 };
 
 const deserializeMonitor = function (monitorData, runtime, targets, extensions) {
@@ -1137,6 +1158,7 @@ const deserializeMonitor = function (monitorData, runtime, targets, extensions) 
  * @returns {Promise.<ImportedProject>} Promise that resolves to the list of targets after the project is deserialized
  */
 const deserialize = function (json, runtime, zip, isSingleSprite) {
+    console.time('deserialize');
     const extensions = {
         extensionIDs: new Set(),
         extensionURLs: new Map()
@@ -1167,6 +1189,7 @@ const deserialize = function (json, runtime, zip, isSingleSprite) {
             }))
         .then(targets => {
             monitorObjects.map(monitorDesc => deserializeMonitor(monitorDesc, runtime, targets, extensions));
+            console.timeEnd('deserialize');
             return targets;
         })
         .then(targets => ({
