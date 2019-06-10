@@ -1108,6 +1108,10 @@ class VirtualMachine extends EventEmitter {
         this.runtime.attachStorage(storage);
     }
 
+    attachBlockUpdater (updateFun) {
+        this.runtime.attachBlockUpdater(updateFun);
+    }
+
     /**
      * set the current locale and builtin messages for the VM
      * @param {!string} locale       current locale

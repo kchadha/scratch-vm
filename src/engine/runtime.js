@@ -1435,6 +1435,10 @@ class Runtime extends EventEmitter {
         this.storage = storage;
     }
 
+    attachBlockUpdater (updateFun) {
+        this.updateBlockOnCurrentWorkspace = updateFun;
+    }
+
     // -----------------------------------------------------------------------------
     // -----------------------------------------------------------------------------
 
