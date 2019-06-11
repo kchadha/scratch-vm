@@ -87,6 +87,8 @@ class Blocks {
          * @type {boolean}
          */
         this.forceNoGlow = optNoGlow || false;
+
+        this.procedures = {};
     }
 
     /**
@@ -277,6 +279,50 @@ class Blocks {
         return null;
     }
 
+    /**
+     * Get the names of all procedure definitions in this block container.
+     * @return {Array.<string>} A list of names of all procedure definitions
+     */
+    getAllProcedureDefinitions () {
+        const cachedProcNames = Object.keys(this._cache.procedureDefinitions);
+        if (cachedProcNames.length > 0) {
+            return cachedProcNames;
+        }
+
+        for (const id in this._blocks) {
+            if (!this._blocks.hasOwnProperty(id)) continue;
+            const block = this._blocks[id];
+            if (block.opcode === 'procedures_prototype' && block.mutation && block.mutation.proccode) {
+                this._cache.procedureDefinitions[block.mutation.proccode] = id;
+            }
+        }
+
+        return Object.keys(this._cache.procedureDefinitions);
+    }
+
+    getAllProcedureCalls (name) {
+        // TODO maybe cache anyways
+        // const cachedProcNames = Object.keys(this._cache.procedureDefinitions);
+        // if (cachedProcNames.length > 0) {
+        //     return cachedProcNames;
+        // }
+
+        const calls = [];
+
+        for (const id in this._blocks) {
+            if (!this._blocks.hasOwnProperty(id)) continue;
+            const block = this._blocks[id];
+            if (block.opcode === 'customBlocks_call' && block.mutation && block.mutation.blockInfo) {
+                // TODO CACHE
+                // this._cache.procedureDefinitions[block.mutation.proccode] = id;
+                calls.push(block.id);
+            }
+        }
+
+        // return Object.keys(this._cache.procedureDefinitions);
+        return calls;
+    }
+
     duplicate () {
         const newBlocks = new Blocks(this.runtime, this.forceNoGlow);
         newBlocks._blocks = Clone.simple(this._blocks);
@@ -318,6 +364,7 @@ class Blocks {
             break;
         }
         case 'change':
+            debugger;
             this.changeBlock({
                 id: e.blockId,
                 element: e.element,
@@ -540,6 +587,11 @@ class Blocks {
             this._addScript(block.id);
         }
 
+        if (block.opcode === 'procedures_prototype') {
+            this.runtime.requestToolboxExtensionsUpdate();
+            this.procedures[block.id] = [];
+        }
+
         this.resetCache();
 
         // A new block was actually added to the block container,
@@ -674,9 +726,31 @@ class Blocks {
         }
         }
 
+        this.resetCache();
         this.emitProjectChanged();
 
-        this.resetCache();
+        // If a custom procedure prototype was edited, request a toolbox update
+        if (block.opcode === 'procedures_prototype' && args.element === 'mutation') {
+            debugger;
+            const procCalls = this.getAllProcedureCalls(block.proccode);
+            this.runtime.requestToolboxExtensionsUpdate();
+            // TODO this will eventually be block.mutation.blockInfo.text... or something
+            // const calls = this.getAllProcedureCalls(block.mutation.proccode);
+            // for (const callId in calls) {
+            //     if (!this._blocks.hasOwnProperty(callId)) continue;
+            //     const callBlock = this._blocks[callId];
+            //     if (callBlock.mutation) {
+            //         if (callBlock.mutation.proccode) {
+            //             const new proccode =
+            //             // update the proccode on the call block
+            //             callBlock.mutation.proccode = block.mutation.proccode;
+            //
+            //         } else if (callBlock.mutation.blockInfo.proccode) {
+            //             callBlock.mutation.blockInfo.proccode =
+            //         }
+            //     }
+            // }
+        }
     }
 
     /**
@@ -816,11 +890,16 @@ class Blocks {
         // Delete any script starting with this block.
         this._deleteScript(blockId);
 
+        const shouldUpdateToolbox = block.opcode === 'procedures_prototype';
+
         // Delete block itself.
         delete this._blocks[blockId];
 
         this.resetCache();
         this.emitProjectChanged();
+        if (shouldUpdateToolbox) {
+            this.runtime.requestToolboxExtensionsUpdate();
+        }
     }
 
     /**

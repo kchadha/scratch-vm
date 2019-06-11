@@ -8,7 +8,7 @@ const decodeHtml = require('decode-html');
  */
 const mutatorTagToObject = function (dom) {
     const obj = Object.create(null);
-    obj.tagName = dom.name;
+    obj.tagName = dom.name || dom.localName;
     obj.children = [];
     for (const prop in dom.attribs) {
         if (prop === 'xmlns') continue;

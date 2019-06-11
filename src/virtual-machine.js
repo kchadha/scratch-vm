@@ -36,7 +36,8 @@ const CORE_EXTENSIONS = [
     // 'sensing',
     // 'operators',
     // 'variables',
-    // 'myBlocks'
+    'myBlocks',
+    'coreExample'
 ];
 
 /**
